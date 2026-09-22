@@ -1,0 +1,26 @@
+[package]
+name = "hdr-toggle"
+version = "0.1.0"
+edition = "2021"
+description = "Toggle Windows HDR per-display from the command line"
+license = "MIT"
+
+[[bin]]
+name = "hdr-toggle"
+path = "src/main.rs"
+
+[dependencies]
+windows-sys = { version = "0.61.2", features = [
+  "Win32_Foundation",
+  "Win32_Devices_Display",
+  "Win32_Graphics_Gdi",
+] }
+# Note: Win32_Graphics_Gdi must stay enabled — DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO
+# is gated behind it in windows-sys (its colorEncoding field type lives there).
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
+codegen-units = 1
+panic = "abort"
