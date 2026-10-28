@@ -1,4 +1,4 @@
-# hdr-toggle
+# hdr
 
 A small Windows CLI, written in Rust, that enables, disables, toggles, or
 reports the "Advanced Color" (HDR) state of your displays.
@@ -19,45 +19,57 @@ Requires the Rust toolchain (https://rustup.rs) on Windows, targeting MSVC:
 cargo build --release
 ```
 
-The binary will be at `target\release\hdr-toggle.exe`. No admin elevation
+The binary will be at `target\release\hdr.exe`. No admin elevation
 is required for this particular API.
 
 ## Usage
 
 ```powershell
-hdr-toggle status              # show HDR support/state for every active display
-hdr-toggle on                  # enable HDR on every display that supports it
-hdr-toggle off                 # disable HDR on every display
-hdr-toggle toggle              # flip each display's current state
-hdr-toggle on --display 2      # act on just display #2 (index from `status`)
+hdr status              # show HDR support/state for every active display
+hdr on                  # enable HDR on every display that supports it
+hdr off                 # disable HDR on every display
+hdr toggle              # flip each display's current state
+hdr on --display 2      # act on just display #2 (index from `status`; -d also works)
+hdr on -d "HDR 4K"      # or pick a display by monitor name (case-insensitive substring)
 ```
 
 Example, to script an HDR-on/HDR-off wrapper around a game launch:
 
 ```powershell
-hdr-toggle on
+hdr on
 Start-Process -Wait "C:\Games\MyGame\game.exe"
-hdr-toggle off
+hdr off
 ```
 
 ## How it works
 
 1. `QueryDisplayConfig` enumerates active display paths and gives each one
-   an `(adapterId, targetId)` pair.
-2. For each display, `DisplayConfigGetDeviceInfo` with
-   `DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO` reads a bitfield
-   reporting whether advanced color (HDR) is supported, currently enabled,
-   or force-disabled by Windows (e.g. no HDR-capable cable/port detected).
-3. `DisplayConfigSetDeviceInfo` with
-   `DISPLAYCONFIG_DEVICE_INFO_SET_ADVANCED_COLOR_STATE` flips the
-   `enableAdvancedColor` bit to turn HDR on or off — equivalent to toggling
-   "Use HDR" in Settings > System > Display, but scriptable.
+   an `(adapterId, targetId)` pair (retried if the display set changes
+   mid-query). `DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME` supplies the
+   monitor name shown in the output.
+2. On Windows 11 24H2+, `DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2`
+   reports HDR support and the user's HDR setting, and
+   `DISPLAYCONFIG_DEVICE_INFO_SET_HDR_STATE` turns HDR on or off — equivalent
+   to "Use HDR" in Settings > System > Display.
+3. On older builds the tool falls back to the legacy
+   `GET_ADVANCED_COLOR_INFO` / `SET_ADVANCED_COLOR_STATE` requests.
+
+The legacy requests treat "advanced color" as a single flag, so on 24H2+
+with Auto Color Management (ACM) enabled they report HDR as on even when
+it's off, and report SDR wide-color displays as HDR-capable. The newer
+requests keep HDR and ACM separate.
 
 ## Notes
 
+- Displays are numbered in `QueryDisplayConfig` path order, which can change
+  when monitors are replugged; selecting by name is more robust for scripts.
+  A name must match exactly one display — an ambiguous or unknown name is
+  an error that lists the available displays.
 - If a display reports `supported=false`, Windows doesn't think it's
   HDR-capable on the current connection (wrong port/cable, or the monitor
   genuinely doesn't support it) — the tool can't override that.
-- `force-disabled by system` means Windows itself has blocked HDR for that
-  display (this flag is informational; `on` will still be attempted but may
-  be rejected by the OS).
+- `limited by system policy` means Windows itself is restricting advanced
+  color on that display (e.g. battery saver). `on` is still attempted but
+  may be rejected by the OS.
+- Exit code is non-zero on bad arguments or if any display fails to query
+  or switch.
