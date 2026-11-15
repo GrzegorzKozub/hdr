@@ -25,12 +25,21 @@ is required for this particular API.
 ## Usage
 
 ```powershell
-hdr status              # show HDR support/state for every active display
-hdr on                  # enable HDR on every display that supports it
-hdr off                 # disable HDR on every display
-hdr toggle              # flip each display's current state
-hdr on --display 2      # act on just display #2 (index from `status`; -d also works)
-hdr on -d "HDR 4K"      # or pick a display by monitor name (case-insensitive substring)
+hdr                     # show the HDR state of each display (same as `hdr status`)
+hdr on                  # turn HDR on for every display that supports it
+hdr off                 # turn HDR off everywhere
+hdr toggle              # switch each display to the other state
+hdr on --display 2      # just display 2 (number from `hdr status`; -d also works)
+hdr on -d oled          # or pick a display by part of its name (case-insensitive)
+```
+
+One line per display:
+
+```
+Display 1 (MPG321UX OLED): HDR off
+Display 1 (MPG321UX OLED): HDR on
+Display 1 (MPG321UX OLED): HDR already on
+Display 2 (DELL U2720Q): HDR not supported
 ```
 
 Example, to script an HDR-on/HDR-off wrapper around a game launch:
@@ -65,11 +74,11 @@ requests keep HDR and ACM separate.
   when monitors are replugged; selecting by name is more robust for scripts.
   A name must match exactly one display — an ambiguous or unknown name is
   an error that lists the available displays.
-- If a display reports `supported=false`, Windows doesn't think it's
+- If a display reports `HDR not supported`, Windows doesn't think it's
   HDR-capable on the current connection (wrong port/cable, or the monitor
   genuinely doesn't support it) — the tool can't override that.
 - `limited by system policy` means Windows itself is restricting advanced
   color on that display (e.g. battery saver). `on` is still attempted but
   may be rejected by the OS.
-- Exit code is non-zero on bad arguments or if any display fails to query
-  or switch.
+- Exit code is 2 on bad arguments and 1 if any display fails to query or
+  switch.

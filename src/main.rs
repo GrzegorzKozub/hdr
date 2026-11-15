@@ -1,81 +1,46 @@
-//! hdr — enable, disable, toggle, or report Windows HDR state for every
-//! active display, from the command line.
+//! hdr: turn Windows HDR on or off, or show its state, for every active
+//! display or just one.
 //!
-//! Display enumeration and the Windows API calls live in `display.rs`.
-//!
-//! Usage:
-//!   hdr status          # print HDR state per display
-//!   hdr on              # enable HDR on every display that supports it
-//!   hdr off             # disable HDR on every display
-//!   hdr toggle          # flip each display's current state
-//!   hdr on --display 1  # act on a single display (1-based, from `status`)
-//!   hdr on -d "HDR 4K"  # ...or by case-insensitive monitor-name substring
+//! The command line lives in `cli.rs`; display enumeration and the Windows
+//! API calls live in `display.rs`.
 
+mod cli;
 mod display;
 
 use std::process::ExitCode;
 
-use display::{Display, enumerate_displays, get_hdr_info, set_hdr_state};
+use anstream::{eprintln, println};
+use clap::Parser;
 
-#[derive(Clone, Copy, PartialEq)]
-enum Command {
-    Status,
-    On,
-    Off,
-    Toggle,
-}
+use cli::{Cli, Command};
+use display::{Display, HdrInfo, enumerate_displays, get_hdr_info, set_hdr_state};
 
-const USAGE: &str = "usage: hdr [status|on|off|toggle] [--display N|NAME]";
+const ON: anstyle::Style = anstyle::AnsiColor::Green.on_default().bold();
+const OFF: anstyle::Style = anstyle::Style::new().bold();
+const ERR: anstyle::Style = anstyle::AnsiColor::Red.on_default().bold();
 
 fn main() -> ExitCode {
-    match run() {
+    let cli = Cli::parse();
+    match run(
+        cli.command.unwrap_or(Command::Status),
+        cli.display.as_deref(),
+    ) {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::FAILURE,
         Err(e) => {
-            eprintln!("error: {e}");
+            eprintln!("{ERR}error:{ERR:#} {e}");
             ExitCode::FAILURE
         }
     }
 }
 
-fn parse_args() -> Result<(Command, Option<String>), String> {
-    let mut command = None;
-    let mut only = None;
-    let mut args = std::env::args().skip(1);
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--display" | "-d" => {
-                let v = args
-                    .next()
-                    .filter(|v| !v.is_empty())
-                    .ok_or("--display needs a value")?;
-                only = Some(v);
-            }
-            "-h" | "--help" => {
-                println!("{USAGE}");
-                std::process::exit(0);
-            }
-            _ if command.is_some() => return Err(format!("unexpected argument '{arg}'\n{USAGE}")),
-            "status" => command = Some(Command::Status),
-            "on" => command = Some(Command::On),
-            "off" => command = Some(Command::Off),
-            "toggle" => command = Some(Command::Toggle),
-            _ => return Err(format!("unknown command '{arg}'\n{USAGE}")),
-        }
-    }
-    Ok((command.unwrap_or(Command::Status), only))
-}
-
 /// Returns Ok(false) if any per-display operation failed.
-fn run() -> Result<bool, String> {
-    let (command, selector) = parse_args()?;
+fn run(command: Command, selector: Option<&str>) -> Result<bool, String> {
     let displays = enumerate_displays()?;
     if displays.is_empty() {
         return Err("no active displays found".into());
     }
-    let only = selector
-        .map(|s| select_display(&displays, &s))
-        .transpose()?;
+    let only = selector.map(|s| select_display(&displays, s)).transpose()?;
 
     let mut ok = true;
     for (i, display) in displays.iter().enumerate() {
@@ -83,53 +48,69 @@ fn run() -> Result<bool, String> {
         if only.is_some_and(|n| n != index) {
             continue;
         }
-        let label = format!("display {index} ({})", display.name);
+        let label = format!("Display {index} ({})", display.name);
 
         let info = match get_hdr_info(display) {
             Ok(info) => info,
             Err(e) => {
-                eprintln!("{label}: {e}");
+                eprintln!("{ERR}error:{ERR:#} {label}: {e}");
                 ok = false;
                 continue;
             }
         };
 
+        if !info.supported {
+            println!("{label}: HDR not supported");
+            continue;
+        }
         if command == Command::Status {
-            println!(
-                "{label}: supported={} enabled={}{}",
-                info.supported,
-                info.enabled,
-                if info.limited_by_policy {
-                    " (limited by system policy)"
-                } else {
-                    ""
-                }
-            );
+            println!("{label}: {}{}", state(info.enabled), policy(&info));
             continue;
         }
 
-        if !info.supported {
-            println!("{label}: HDR not supported, skipping");
-            continue;
-        }
         let want = match command {
             Command::On => true,
             Command::Off => false,
             _ => !info.enabled,
         };
         if want == info.enabled {
-            println!("{label}: already {}", if want { "on" } else { "off" });
+            println!("{label}: {}", state_already(want));
             continue;
         }
         match set_hdr_state(display, &info, want) {
-            Ok(()) => println!("{label}: HDR {}", if want { "enabled" } else { "disabled" }),
+            Ok(()) => println!("{label}: {}", state(want)),
             Err(e) => {
-                eprintln!("{label}: {e}");
+                eprintln!("{ERR}error:{ERR:#} {label}: {e}");
                 ok = false;
             }
         }
     }
     Ok(ok)
+}
+
+/// "HDR on" in green or "HDR off" in bold.
+fn state(on: bool) -> String {
+    if on {
+        format!("{ON}HDR on{ON:#}")
+    } else {
+        format!("{OFF}HDR off{OFF:#}")
+    }
+}
+
+fn state_already(on: bool) -> String {
+    if on {
+        format!("{ON}HDR already on{ON:#}")
+    } else {
+        format!("{OFF}HDR already off{OFF:#}")
+    }
+}
+
+fn policy(info: &HdrInfo) -> &'static str {
+    if info.limited_by_policy {
+        " (limited by system policy)"
+    } else {
+        ""
+    }
 }
 
 /// Resolve a `--display` value to a 1-based index: a number is taken as an
@@ -163,5 +144,58 @@ fn select_display(displays: &[Display], selector: &str) -> Result<usize, String>
             "'{selector}' matches several displays: {}; use a more specific name or an index",
             list(&mut matches.iter().copied())
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn displays() -> Vec<Display> {
+        ["MPG321UX OLED", "DELL U2720Q", "DELL P2419H"]
+            .map(Display::named)
+            .into()
+    }
+
+    #[test]
+    fn selects_by_index() {
+        assert_eq!(select_display(&displays(), "1"), Ok(1));
+        assert_eq!(select_display(&displays(), "3"), Ok(3));
+    }
+
+    #[test]
+    fn rejects_out_of_range_index() {
+        assert!(
+            select_display(&displays(), "0")
+                .unwrap_err()
+                .contains("does not exist")
+        );
+        assert!(
+            select_display(&displays(), "4")
+                .unwrap_err()
+                .contains("does not exist")
+        );
+    }
+
+    #[test]
+    fn selects_by_case_insensitive_name_part() {
+        assert_eq!(select_display(&displays(), "oled"), Ok(1));
+        assert_eq!(select_display(&displays(), "u2720"), Ok(2));
+    }
+
+    #[test]
+    fn rejects_ambiguous_name() {
+        let err = select_display(&displays(), "dell").unwrap_err();
+        assert!(err.contains("matches several displays"), "{err}");
+        assert!(err.contains("2 (DELL U2720Q), 3 (DELL P2419H)"), "{err}");
+    }
+
+    #[test]
+    fn rejects_unknown_name_listing_all() {
+        let err = select_display(&displays(), "lg").unwrap_err();
+        assert!(
+            err.contains("available: 1 (MPG321UX OLED), 2 (DELL U2720Q), 3 (DELL P2419H)"),
+            "{err}"
+        );
     }
 }

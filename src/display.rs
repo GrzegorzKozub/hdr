@@ -43,6 +43,21 @@ pub struct Display {
     pub name: String,
 }
 
+#[cfg(test)]
+impl Display {
+    /// A display with just a name, for testing selection logic.
+    pub fn named(name: &str) -> Self {
+        Self {
+            adapter_id: LUID {
+                LowPart: 0,
+                HighPart: 0,
+            },
+            target_id: 0,
+            name: name.to_owned(),
+        }
+    }
+}
+
 pub struct HdrInfo {
     pub supported: bool,
     pub enabled: bool,
