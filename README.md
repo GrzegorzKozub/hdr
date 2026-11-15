@@ -11,16 +11,21 @@ game launches and off when it closes. This is an independent, original
 implementation against Microsoft's documented API, not a port of RHI's
 (GPL-3.0) source.
 
+## Install
+
+Download `hdr.exe` from the
+[latest release](https://github.com/GrzegorzKozub/hdr/releases/latest) and put
+it on your `PATH`. No admin elevation is required.
+
 ## Build
 
-Requires the Rust toolchain (https://rustup.rs) on Windows, targeting MSVC:
+Requires the Rust toolchain (https://rustup.rs) on Windows, MSVC or GNU:
 
 ```powershell
 cargo build --release
 ```
 
-The binary will be at `target\release\hdr.exe`. No admin elevation
-is required for this particular API.
+The binary will be at `target\release\hdr.exe`.
 
 ## Usage
 
@@ -82,3 +87,20 @@ requests keep HDR and ACM separate.
   may be rejected by the OS.
 - Exit code is 2 on bad arguments and 1 if any display fails to query or
   switch.
+
+## Release
+
+Versions are dates: `YYYY.M.D`, at most one release per day.
+
+```powershell
+./release.ps1
+```
+
+sets today's version in `Cargo.toml`, commits, and pushes a `v` tag. The tag
+runs the release workflow, which checks formatting, lints and tests, builds a
+statically linked MSVC exe, and publishes
+`hdr-vYYYY.M.D-x86_64-pc-windows-msvc.zip`.
+
+## License
+
+[MIT](LICENSE)
