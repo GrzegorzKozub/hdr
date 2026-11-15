@@ -15,7 +15,7 @@ mod display;
 
 use std::process::ExitCode;
 
-use display::{enumerate_displays, get_hdr_info, set_hdr_state, Display};
+use display::{Display, enumerate_displays, get_hdr_info, set_hdr_state};
 
 #[derive(Clone, Copy, PartialEq)]
 enum Command {
