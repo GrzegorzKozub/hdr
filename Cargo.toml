@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Toggle Windows HDR per-display from the command line"
 license = "MIT"
+repository = "https://github.com/GrzegorzKozub/hdr"
 
 [[bin]]
 name = "hdr"
