@@ -79,7 +79,7 @@ fn run(command: Command, selector: Option<&str>) -> Result<bool, String> {
             _ => !info.enabled,
         };
         if want == info.enabled {
-            println!("{label}{}", state_already(want));
+            println!("{label}{}", state(want));
             continue;
         }
         match set_hdr_state(display, &info, want) {
@@ -99,14 +99,6 @@ fn state(on: bool) -> String {
         format!("{ON}HDR on{ON:#}")
     } else {
         format!("{OFF}HDR off{OFF:#}")
-    }
-}
-
-fn state_already(on: bool) -> String {
-    if on {
-        format!("{ON}HDR already on{ON:#}")
-    } else {
-        format!("{OFF}HDR already off{OFF:#}")
     }
 }
 
