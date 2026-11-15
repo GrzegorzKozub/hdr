@@ -48,23 +48,28 @@ fn run(command: Command, selector: Option<&str>) -> Result<bool, String> {
         if only.is_some_and(|n| n != index) {
             continue;
         }
-        let label = format!("Display {index} ({})", display.name);
+        // With a single display there is nothing to tell apart.
+        let label = if displays.len() == 1 {
+            String::new()
+        } else {
+            format!("Display {index} ({}): ", display.name)
+        };
 
         let info = match get_hdr_info(display) {
             Ok(info) => info,
             Err(e) => {
-                eprintln!("{ERR}error:{ERR:#} {label}: {e}");
+                eprintln!("{ERR}error:{ERR:#} {label}{e}");
                 ok = false;
                 continue;
             }
         };
 
         if !info.supported {
-            println!("{label}: HDR not supported");
+            println!("{label}HDR not supported");
             continue;
         }
         if command == Command::Status {
-            println!("{label}: {}{}", state(info.enabled), policy(&info));
+            println!("{label}{}{}", state(info.enabled), policy(&info));
             continue;
         }
 
@@ -74,13 +79,13 @@ fn run(command: Command, selector: Option<&str>) -> Result<bool, String> {
             _ => !info.enabled,
         };
         if want == info.enabled {
-            println!("{label}: {}", state_already(want));
+            println!("{label}{}", state_already(want));
             continue;
         }
         match set_hdr_state(display, &info, want) {
-            Ok(()) => println!("{label}: {}", state(want)),
+            Ok(()) => println!("{label}{}", state(want)),
             Err(e) => {
-                eprintln!("{ERR}error:{ERR:#} {label}: {e}");
+                eprintln!("{ERR}error:{ERR:#} {label}{e}");
                 ok = false;
             }
         }
