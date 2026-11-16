@@ -1,6 +1,7 @@
 use anstyle::{AnsiColor, Effects, Style};
 use clap::builder::{NonEmptyStringValueParser, Styles};
-use clap::{Parser, Subcommand};
+use clap::error::{ContextKind, ContextValue, ErrorKind};
+use clap::{CommandFactory, Parser, Subcommand};
 
 // Help colors as in cargo, uv and hyperfine, in the normal (not bright) shades.
 const HEADER: Style = AnsiColor::Green.on_default().effects(Effects::BOLD);
@@ -76,4 +77,31 @@ fn examples() -> String {
         out.push_str(&format!("\n  {LITERAL}{cmd:<22}{LITERAL:#} {what}"));
     }
     out
+}
+
+/// A `--display` value that matches no single display, reported like clap's
+/// own invalid values: usage, a tip, and exit code 2.
+pub fn invalid_display(value: &str, tip: &str) -> clap::Error {
+    let mut cmd = Cli::command();
+    cmd.build();
+    let arg = cmd
+        .get_arguments()
+        .find(|a| a.get_id() == "display")
+        .map(ToString::to_string)
+        .unwrap_or_default();
+    let mut err = clap::Error::new(ErrorKind::InvalidValue).with_cmd(&cmd);
+    err.insert(ContextKind::InvalidArg, ContextValue::String(arg));
+    err.insert(
+        ContextKind::InvalidValue,
+        ContextValue::String(value.into()),
+    );
+    err.insert(
+        ContextKind::Suggested,
+        ContextValue::StyledStrs(vec![tip.to_owned().into()]),
+    );
+    err.insert(
+        ContextKind::Usage,
+        ContextValue::StyledStr(cmd.render_usage()),
+    );
+    err
 }

@@ -15,9 +15,10 @@ use clap::Parser;
 use cli::{Cli, Command};
 use display::{Display, HdrInfo, enumerate_displays, get_hdr_info, set_hdr_state};
 
-const ON: anstyle::Style = anstyle::AnsiColor::Green.on_default().bold();
-const OFF: anstyle::Style = anstyle::Style::new().bold();
-const ERR: anstyle::Style = anstyle::AnsiColor::Red.on_default().bold();
+const ON: anstyle::Style = anstyle::AnsiColor::Yellow.on_default();
+const OFF: anstyle::Style = anstyle::AnsiColor::White.on_default();
+const ERR: anstyle::Style = anstyle::AnsiColor::Red.on_default();
+const NAME: anstyle::Style = anstyle::AnsiColor::Magenta.on_default();
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -40,7 +41,11 @@ fn run(command: Command, selector: Option<&str>) -> Result<bool, String> {
     if displays.is_empty() {
         return Err("no active displays found".into());
     }
-    let only = selector.map(|s| select_display(&displays, s)).transpose()?;
+    let only = match selector.map(|s| (s, select_display(&displays, s))) {
+        None => None,
+        Some((_, Ok(n))) => Some(n),
+        Some((s, Err(tip))) => cli::invalid_display(s, &tip).exit(),
+    };
 
     let mut ok = true;
     for (i, display) in displays.iter().enumerate() {
@@ -52,7 +57,7 @@ fn run(command: Command, selector: Option<&str>) -> Result<bool, String> {
         let label = if displays.len() == 1 {
             String::new()
         } else {
-            format!("Display {index} ({}): ", display.name)
+            format!("display {index}, {NAME}{}{NAME:#}, ", display.name)
         };
 
         let info = match get_hdr_info(display) {
@@ -65,7 +70,7 @@ fn run(command: Command, selector: Option<&str>) -> Result<bool, String> {
         };
 
         if !info.supported {
-            println!("{label}HDR not supported");
+            println!("{label}hdr not supported");
             continue;
         }
         if command == Command::Status {
@@ -93,31 +98,43 @@ fn run(command: Command, selector: Option<&str>) -> Result<bool, String> {
     Ok(ok)
 }
 
-/// "HDR on" in green or "HDR off" in bold.
+/// "hdr on" in yellow or "hdr off" in gray.
 fn state(on: bool) -> String {
     if on {
-        format!("{ON}HDR on{ON:#}")
+        format!("{ON}hdr on{ON:#}")
     } else {
-        format!("{OFF}HDR off{OFF:#}")
+        format!("{OFF}hdr off{OFF:#}")
     }
 }
 
 fn policy(info: &HdrInfo) -> &'static str {
     if info.limited_by_policy {
-        " (limited by system policy)"
+        ", limited by system policy"
     } else {
         ""
     }
 }
 
 /// Resolve a `--display` value to a 1-based index: a number is taken as an
-/// index, anything else must match exactly one monitor name.
+/// index, anything else must match exactly one monitor name. The error is a
+/// tip listing the displays to pick from.
 fn select_display(displays: &[Display], selector: &str) -> Result<usize, String> {
+    let list = |idx: &mut dyn Iterator<Item = usize>| {
+        idx.map(|i| {
+            format!(
+                "{NAME}{}{NAME:#} or {NAME}{}{NAME:#}",
+                i + 1,
+                displays[i].name
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+    };
     if let Ok(n) = selector.parse::<usize>() {
         if n == 0 || n > displays.len() {
             return Err(format!(
-                "display {n} does not exist (found {})",
-                displays.len()
+                "available displays: {}",
+                list(&mut (0..displays.len()))
             ));
         }
         return Ok(n);
@@ -126,19 +143,14 @@ fn select_display(displays: &[Display], selector: &str) -> Result<usize, String>
     let matches: Vec<usize> = (0..displays.len())
         .filter(|&i| displays[i].name.to_lowercase().contains(&needle))
         .collect();
-    let list = |idx: &mut dyn Iterator<Item = usize>| {
-        idx.map(|i| format!("{} ({})", i + 1, displays[i].name))
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
     match matches[..] {
         [i] => Ok(i + 1),
         [] => Err(format!(
-            "no display matches '{selector}' (available: {})",
+            "available displays: {}",
             list(&mut (0..displays.len()))
         )),
         _ => Err(format!(
-            "'{selector}' matches several displays: {}; use a more specific name or an index",
+            "several displays match: {}",
             list(&mut matches.iter().copied())
         )),
     }
@@ -147,6 +159,12 @@ fn select_display(displays: &[Display], selector: &str) -> Result<usize, String>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The error text without colors.
+    fn err(selector: &str) -> String {
+        let e = select_display(&displays(), selector).unwrap_err();
+        anstream::adapter::strip_str(&e).to_string()
+    }
 
     fn displays() -> Vec<Display> {
         ["MPG321UX OLED", "DELL U2720Q", "DELL P2419H"]
@@ -162,16 +180,8 @@ mod tests {
 
     #[test]
     fn rejects_out_of_range_index() {
-        assert!(
-            select_display(&displays(), "0")
-                .unwrap_err()
-                .contains("does not exist")
-        );
-        assert!(
-            select_display(&displays(), "4")
-                .unwrap_err()
-                .contains("does not exist")
-        );
+        assert!(err("0").starts_with("available displays: 1 or "));
+        assert!(err("4").starts_with("available displays: 1 or "));
     }
 
     #[test]
@@ -182,17 +192,17 @@ mod tests {
 
     #[test]
     fn rejects_ambiguous_name() {
-        let err = select_display(&displays(), "dell").unwrap_err();
-        assert!(err.contains("matches several displays"), "{err}");
-        assert!(err.contains("2 (DELL U2720Q), 3 (DELL P2419H)"), "{err}");
+        assert_eq!(
+            err("dell"),
+            "several displays match: 2 or DELL U2720Q, 3 or DELL P2419H"
+        );
     }
 
     #[test]
     fn rejects_unknown_name_listing_all() {
-        let err = select_display(&displays(), "lg").unwrap_err();
-        assert!(
-            err.contains("available: 1 (MPG321UX OLED), 2 (DELL U2720Q), 3 (DELL P2419H)"),
-            "{err}"
+        assert_eq!(
+            err("lg"),
+            "available displays: 1 or MPG321UX OLED, 2 or DELL U2720Q, 3 or DELL P2419H"
         );
     }
 }

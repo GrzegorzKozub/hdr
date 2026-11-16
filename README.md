@@ -41,11 +41,11 @@ hdr on -d oled          # or pick a display by part of its name (case-insensitiv
 One line per display:
 
 ```
-Display 1 (MPG321UX OLED): HDR on
-Display 2 (DELL U2720Q): HDR not supported
+display 1, MPG321UX OLED, hdr on
+display 2, DELL U2720Q, hdr not supported
 ```
 
-With a single display, just the state: `HDR on` or `HDR off`.
+With a single display, just the state: `hdr on` or `hdr off`.
 
 Example, to script an HDR-on/HDR-off wrapper around a game launch:
 
