@@ -57,7 +57,10 @@ fn run(command: Command, selector: Option<&str>) -> Result<bool, String> {
         let label = if displays.len() == 1 {
             String::new()
         } else {
-            format!("display {index}, {NAME}{}{NAME:#}, ", display.name)
+            format!(
+                "display {NAME}{index}{NAME:#}, {NAME}{}{NAME:#}, ",
+                display.name
+            )
         };
 
         let info = match get_hdr_info(display) {
